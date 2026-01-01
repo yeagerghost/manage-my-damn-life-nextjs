@@ -582,8 +582,8 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
                 firstDay={firstDay}
                 locales={allLocales}
             	locale={i18n.language}
-		slotDuration={'00:15:00'}                // 15 minute slots globally
-		slotLabelInterval={'01:00:00'}           // label every 1 hour
+	        slotDuration={'00:15:00'}                // 15 minute slots globally
+	        slotLabelInterval={'01:00:00'}           // label every 1 hour
             />
         </>
     )

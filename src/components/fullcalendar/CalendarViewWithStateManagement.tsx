@@ -617,11 +617,8 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
                 firstDay={firstDay}
                 locales={allLocales}
                 locale={i18n.language}
-<<<<<<< custom-0.8.2-to-0.8.3
                 slotDuration={'00:15:00'}                // 15 minute slots globally
                 slotLabelInterval={'01:00:00'}           // label every 1 hour
-=======
->>>>>>> custom-0.8.3
                 titleFormat={dateFormat} 
                 eventTimeFormat={timeFormat ?? "HH:mm"}
                 dayHeaderFormat={dateFormat? `${addDayNameInHeader()}` :  "DD/MM/YYYY ddd"}

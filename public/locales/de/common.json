@@ -288,5 +288,17 @@
     "WEEK_VIEW": "Wochenansicht",
     "YES": "Ja",
     "YOUR_ACCOUNTS": "Ihre Konten",
-    "YOUR_FILTERS": "Ihre Filter"
-  }
+    "YOUR_FILTERS": "Ihre Filter",
+    "ALARM_ACTION": "Alarm Typ",
+    "ADD_ALARM": "Einen Alarm hinzufügen",
+    "ATTENDEES": "Teilnehmer",
+    "ATTENDEES_DESC": "Geben Sie einen Teilnehmer pro Zeile in folgendem Format ein: Teilnehmername, email@example.com",
+    "AUDIO": "Audio",
+    "DISPLAY": "Anzeige",
+    "BEGINNING_OF_UNIVERSE": "Der Beginn des Universums",
+    "CANCEL": "Abbrechen",
+    "CREATE_ACCOUNT": "Benutzerkonto erstellen",
+    "DISABLE": "Deaktivieren",
+    "DUE_FROM": "Fällig ab",
+    "DUE_AFTER": "Fällig nach"
+}

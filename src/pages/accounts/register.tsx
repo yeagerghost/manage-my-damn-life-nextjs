@@ -6,24 +6,27 @@ import { serverSideTranslations } from 'next-i18next/serverSideTranslations';
 import Head from 'next/head';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
-import { useState } from 'react';
-import { Button } from 'react-bootstrap';
+import { useEffect, useState } from 'react';
+import { Alert, Button } from 'react-bootstrap';
 import Container from 'react-bootstrap/Container';
 import Form from 'react-bootstrap/Form';
 import { useTranslation } from 'next-i18next';
 import { MdArrowBack } from 'react-icons/md';
 import { toast } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
 import validator from 'validator';
+import { userRegistrationAllowed } from '@/helpers/api/settings';
+import { isInstalled_CheckWithSequelize } from '@/helpers/api/install';
 
-const Register = () => {
+const Register = ({registrationAllowed, installed}) => {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [passwordConfirm, setPasswordConfirm] = useState("");
     const [email, setEmail] = useState("");
     const router = useRouter();
+    const [allowedAccess, setAllowedAccess] = useState(true);
+    
     const {t} = useTranslation()
-
+    
     const goBackClicked = () => {
         router.push("/login");
     };
@@ -65,6 +68,9 @@ const Register = () => {
             makeRequestToServer();
         }
     };
+    const notInstalledBannerClicked = () =>{
+        router.push("/install")
+    }
 
     const makeRequestToServer = async () => {
         const url_api = `${getAPIURL()}users/register`;
@@ -98,6 +104,13 @@ const Register = () => {
             console.error("makeRequestToServer", e);
         }
     };
+    let notInstalledBanner;
+    if (!installed) {
+      notInstalledBanner = (
+        <div onClick={notInstalledBannerClicked} style={{ background: "darkred", textAlign: "center", color: "white" }}>{t("MMDL_NOT_INSTALLED")}</div>
+      );
+    }
+
 
     return (
         <>
@@ -106,6 +119,7 @@ const Register = () => {
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <link rel="icon" href="/favicon.ico" />
             </Head>
+            {notInstalledBanner}
             <Container fluid>
                 <div style={{
                     margin: "0",
@@ -119,44 +133,57 @@ const Register = () => {
                     </div>
                     <h2 style={{ textAlign: 'center' }}>{t("APP_NAME")}</h2>
                     <br />
-                    <div onClick={goBackClicked}>
-                        <MdArrowBack size={24} />
-                    </div>
-                    <br />
-                    <h1>{t("REGISTER")}</h1>
-                    <Form.Control
-                        maxLength={40}
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        placeholder={t("ENTER_USERNAME")}
-                    />
-                    <br />
-                    <Form.Control
-                        maxLength={40}
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder={t("ENTER_EMAIL")}
-                    />
-                    <br />
-                    <Form.Control
-                        onChange={(e) => setPassword(e.target.value)}
-                        value={password}
-                        type="password"
-                        maxLength={40}
-                        placeholder={t("ENTER_A_PASSWORD")}
-                    />
-                    <br />
-                    <Form.Control
-                        onChange={(e) => setPasswordConfirm(e.target.value)}
-                        value={passwordConfirm}
-                        type="password"
-                        maxLength={40}
-                        placeholder={t("REENTER_PASSWORD")}
-                    />
-                    <br />
-                    <Button onClick={registerButtonClicked}>
-                        {t("REGISTER")}
-                    </Button>
+                    { 
+                    (registrationAllowed) ? 
+                        (
+                            <>
+                            
+                                <div onClick={goBackClicked}>
+                                    <MdArrowBack size={24} />
+                                </div>
+                                <br />
+                                <h1>{t("REGISTER")}</h1>
+                                <Form.Control
+                                    maxLength={40}
+                                    value={username}
+                                    onChange={(e) => setUsername(e.target.value)}
+                                    placeholder={t("ENTER_USERNAME")}
+                                />
+                                <br />
+                                <Form.Control
+                                    maxLength={40}
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    placeholder={t("ENTER_EMAIL")}
+                                />
+                                <br />
+                                <Form.Control
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    value={password}
+                                    type="password"
+                                    maxLength={40}
+                                    placeholder={t("ENTER_A_PASSWORD")}
+                                />
+                                <br />
+                                <Form.Control
+                                    onChange={(e) => setPasswordConfirm(e.target.value)}
+                                    value={passwordConfirm}
+                                    type="password"
+                                    maxLength={40}
+                                    placeholder={t("REENTER_PASSWORD")}
+                                />
+                                <br />
+                                <Button onClick={registerButtonClicked}>
+                                    {t("REGISTER")}
+                                </Button>
+                        </>
+                        ):(
+                            <>
+
+                            <Alert variant='danger'>{t("USER_REG_DISABLED")}</Alert>
+                            </>
+                        )
+                   }
                 </div>
             </Container>
             {/* <Toastify /> */}
@@ -166,9 +193,19 @@ const Register = () => {
 
 export default Register;
 
-export async function getStaticProps({ locale }) {
+// export async function getStaticProps({ locale }) {
+//     return {
+//         props: {
+//             ...(await serverSideTranslations(locale, ["common"], null, AVAILABLE_LANGUAGES)),
+//         },
+//     };
+// }
+
+export async function getServerSideProps({ locale }) {
     return {
         props: {
+            installed: await isInstalled_CheckWithSequelize(),
+            registrationAllowed: await userRegistrationAllowed(), // or fetch from DB, etc.
             ...(await serverSideTranslations(locale, ["common"], null, AVAILABLE_LANGUAGES)),
         },
     };

@@ -28,7 +28,7 @@ yarn-error.log*
 
 # local env files
 .env*.local
-
+.env*
 # vercel
 .vercel
 
@@ -60,3 +60,5 @@ docker-compose.yml.new
 .env
 env.local
 sample_install_mmdm.sqlite
+tmp/
+host.docker.internal

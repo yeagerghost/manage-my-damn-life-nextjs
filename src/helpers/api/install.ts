@@ -4,6 +4,8 @@ import { shouldLogforAPI } from "../logs"
 import { getSequelizeObj, getSimpleConnectionVar, sequelizeCanConnecttoDB } from "./db"
 import { getConnectionVar } from "./db"
 import * as _ from "lodash"
+import { userRegistrationAllowed } from "./settings"
+import { users } from "models/users"
 /**
  * List of tables in db. v0.3.0
  */
@@ -99,6 +101,11 @@ export async function isInstalled_CheckWithSequelize(){
     }
     return true
 }
+export async function isInstalled_CheckWithSequelizeForFrontEnd(){
+    const dbConnectionOK = await testDBConnection()
+    if(!dbConnectionOK) return false
+    return isInstalled_CheckWithSequelize()
+}
 export async function isInstalled(log)
 {
     return isInstalled_CheckWithSequelize()
@@ -190,6 +197,16 @@ export async function getListofTablesWithSequelize(){
     })
 }
 
+export async function displayCreateAccountLinkOnFrontend(){
+    const regAllowed = await userRegistrationAllowed()
+    if(!regAllowed) return false
+    const userList = await users.findAll().catch(e=>{
+        console.error("displayCreateAccountLinkOnFrontend", e)
+    })
+    if(userList && Array.isArray(userList) && userList.length>0) return false
+    return true
+    
+}
 export function installTables(table_name)
 {
 

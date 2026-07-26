@@ -3,8 +3,6 @@ import { useAtomValue, useSetAtom } from "jotai"
 import { useEffect, useState } from "react"
 import { Accordion, Alert, Button, Col, Form, Row } from "react-bootstrap"
 import { currentDateFormatAtom, currentSimpleDateFormatAtom } from "stateStore/SettingsStore"
-import "react-datetime/css/react-datetime.css";
-
 import Recurrence from "@/components/common/Recurrence";
 import { getStandardDateFormat } from "@/helpers/frontend/settings"
 import moment, { Moment } from "moment"
@@ -37,7 +35,7 @@ import next from "next/types"
 import { useTranslation } from "next-i18next"
 import { VAlarmForm } from "@/components/valarm/VAlarmForm"
 import { getParsedAlarmsFromTodo } from "@/helpers/frontend/VTODOHelpers"
-import { vAlarm } from "@/types/valarm"
+import { VAlarmType } from "@/types/valarm"
 import { RRuleHelper } from "@/helpers/frontend/classes/RRuleHelper"
 
 export const TaskEditorWithStateManagement = ({ input, onChange, showDeleteDailog, onServerResponse, closeEditor }: { input: TaskEditorInputType, onChange: Function, showDeleteDailog: Function, onServerResponse: Function, closeEditor: Function }) => {
@@ -84,7 +82,7 @@ export const TaskEditorWithStateManagement = ({ input, onChange, showDeleteDailo
     const [recurrenceObj, setRecurrenceObj] = useState<any>({})
     const [rawICS, setRawICS] = useState('')
     const [isTemplate, setIsTemplate] = useState(false)
-    const [alarms, setVAlarm] = useState<vAlarm[]>([])
+    const [alarms, setVAlarm] = useState<VAlarmType[]>([])
     const changeDoneStatus = (isDone: boolean) => {
         if(!isDone){
             setCompleted("")
@@ -459,7 +457,7 @@ export const TaskEditorWithStateManagement = ({ input, onChange, showDeleteDailo
                 if (isNewTask) {
                     const etag = getRandomString(32)
     
-                    postNewTodo(calendar_id, finalVTODO, etag)
+                    await postNewTodo(calendar_id, finalVTODO, etag)
                 } else {
                     // Make an update request.
                     if (input.id) {
@@ -782,7 +780,7 @@ export const TaskEditorWithStateManagement = ({ input, onChange, showDeleteDailo
             {repeatInfoMessage}
             <h4>{t("CALENDAR")}</h4>
             <div style={{ marginBottom: 10 }}>
-                <CalendarPicker onSelectedHook={calendarSelected} key={uid} calendar_id={calendar_id} disabled={calendarDDLDisabled} />
+                <CalendarPicker type="task" onSelectedHook={calendarSelected} key={uid} calendar_id={calendar_id} disabled={calendarDDLDisabled} />
             </div>
             {showMoveEventOption ? <p onClick={copyMoveClicked} style={{ textAlign: "end", color: PRIMARY_COLOUR, fontSize: 14, }}>{t("COPY_MOVE")}</p> : null}
 

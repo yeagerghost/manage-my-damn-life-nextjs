@@ -1,5 +1,5 @@
 import { varNotEmpty } from '../general';
-import { shouldLogforAPI } from '../logs';
+import { shouldLogforAPI, shouldLogforSequelize } from '../logs';
 const { Sequelize } = require('sequelize');
 
 export function getConnectionVar()
@@ -49,7 +49,8 @@ export function getSequelizeObj(raw?): typeof Sequelize{
 
       raw: typeof(raw)!="undefined" ? raw: true,
     },
-    logging: shouldLogforAPI()
+    // logging: shouldLogforAPI()
+    logging: shouldLogforSequelize()
 
   }
   // console.log("getSequelizeObj() dialect ->>>", dialect)
@@ -90,11 +91,11 @@ export async function sequelizeCanConnecttoDB(){
   var sequelize= getSequelizeObj()
   try {
     await sequelize.authenticate();
-    if(shouldLogforAPI()) console.log('Connection has been established successfully.');
+    if(shouldLogforAPI()) console.log('sequelizeCanConnecttoDB: Connection has been established successfully.');
 
     return true
   } catch (error) {
-    if(shouldLogforAPI()) console.log('Db Connection Failed:', error);
+    if(shouldLogforAPI()) console.log('sequelizeCanConnecttoDB: Db Connection Failed:', error);
     return error
   }
   

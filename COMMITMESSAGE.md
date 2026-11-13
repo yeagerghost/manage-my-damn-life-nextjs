@@ -1,1 +1,1 @@
-- Release v0.9.3.
+Bug fix: VAlarm now works with ics library.

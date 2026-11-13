@@ -1,18 +1,13 @@
 import React, { Component, LegacyRef, createRef, useEffect, useRef } from "react";
-import FullCalendar from '@fullcalendar/react' // must go before plugins
-import dayGridPlugin from '@fullcalendar/daygrid';
-import timeGridPlugin from '@fullcalendar/timegrid';
-import listPlugin from '@fullcalendar/list';
-import allLocales from '@fullcalendar/core/locales-all'
+import FullCalendar, { CalendarApi, CalendarRef, FormatterInput } from '@fullcalendar/react'
+import dayGridPlugin from '@fullcalendar/react/daygrid'
+import timeGridPlugin from '@fullcalendar/react/timegrid';
+import listPlugin from '@fullcalendar/react/list';
 import { returnGetParsedVTODO } from "@/helpers/frontend/calendar";
 import { isValidResultArray, varNotEmpty } from "@/helpers/general";
-import bootstrap5Plugin from '@fullcalendar/bootstrap5';
 import Form from 'react-bootstrap/Form';
-import { Row, Col } from "react-bootstrap";
+import { Row, Col, Stack } from "react-bootstrap";
 import { getEmptyEventDataObject, getParsedEvent, isAllDayEvent, majorTaskFilter, rruleToObject, updateEvent } from "@/helpers/frontend/events";
-import bootstrap from "@fullcalendar/bootstrap";
-import interactionPlugin from '@fullcalendar/interaction'
-import Offcanvas from 'react-bootstrap/Offcanvas';
 import rrulePlugin from '@fullcalendar/rrule'
 import EventEditor from "../events/EventEditor";
 import moment from "moment";
@@ -38,17 +33,38 @@ import { showTaskEditorAtom, taskEditorInputAtom } from "stateStore/TaskEditorSt
 import { AddFromTemplateModal } from "../common/AddTask/AddFromTemplateModal";
 import { useTranslation } from "next-i18next";
 import { getAllEventsFromWebcalForRender } from "@/helpers/frontend/webcals";
-import { WebCalEvents } from "@/helpers/frontend/dexie/dexieDB";
+import { Calendar_Events, WebCalEvents } from "@/helpers/frontend/dexie/dexieDB";
 import { checkIfUserWanttoSeeWebCalIDFromPreferenceObject } from "@/helpers/frontend/classes/UserPreferences/Preference_WebCalsToShow";
 import { currentSimpleDateFormatAtom, currentSimpleTimeFormatAtom } from "stateStore/SettingsStore";
-import momentPlugin from '@fullcalendar/moment';
 import { Caldav_Summary } from "@/types/generic";
+import { SyncManager } from "@/helpers/frontend/SyncManager";
+import { RRule, rrulestr } from 'rrule'
+import { DateFormatter } from "node_modules/rrule/dist/esm/nlp/totext";
+import '@fullcalendar/react/skeleton.css'; 
+import interactionPlugin from '@fullcalendar/react/interaction'
+import themePlugin from '@fullcalendar/react/themes/monarch'; 
+import '@fullcalendar/react/themes/monarch/theme.css'; 
+import '@fullcalendar/react/themes/monarch/palettes/purple.css'; 
+import { isDarkModeEnabled } from "src/helpers/frontend/theme";
+import { parseRRuleString } from "src/helpers/frontend/rrule";
+import { getStartAndEndDateForTaskForCalendar } from "src/helpers/frontend/tasks";
+
+interface LocalRRule{
+    freq:number ,
+    dtstart?: string
+    byweekday?: number[],
+    interval: number,
+    until?: string | Date
+    count? : number | null | undefined,
+    bymonth?: number[] ,
+    bymonthday? :number[]
+}
 interface EventObject {
     id: string,
     title: string,
     start?: string,
     startTime?:string,
-    end: string,
+    end?: string,
     endTime?:string,
     allDay: boolean,
     editable: boolean,
@@ -56,8 +72,8 @@ interface EventObject {
     displayEventEnd?: boolean,
     displayEventStart?: boolean,
     duration?: {seconds?: number}
-    rrule?: { freq: string, interval: number, dtstart: string, until: string },
-    backgroundColor: string,
+    rrule?: LocalRRule,
+    color?: string,
     extendedProps?: ExtendedProps     
 
 }
@@ -67,7 +83,7 @@ interface ExtendedProps{
 interface ExtendedWebcalEvents extends WebCalEvents{
     colour?: string
 }
-export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: number }) => {
+export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR?: number }) => {
     /**
      * Jotai
      */
@@ -76,30 +92,32 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
     const setEditorInput = useSetAtom(eventEditorInputAtom)
     const setTaskEditorInput = useSetAtom(taskEditorInputAtom)
     const setShowTaskEditor = useSetAtom(showTaskEditorAtom)
-    const updated = useAtomValue(updateCalendarViewAtom)
     const setUpdatedCalendarView = useSetAtom(updateCalendarViewAtom)
+    
     const allUpdated = useAtomValue(updateViewAtom)
     const timeFormat = useAtomValue(currentSimpleTimeFormatAtom)
     const dateFormat = useAtomValue(currentSimpleDateFormatAtom)
-    
+    const setUpdateViewTime = useSetAtom(updateViewAtom)
+
     /**
      * Local State
      */
     const [viewValue, setViewValue] = useState("timeGridDay")
     const [showTasksChecked, setShowTasksChecked] = useState(true)
-    const [allEvents, setEventsArray] = useState<EventsLikeAPIType[]>([])
+    // const [allEvents, setEventsArray] = useState<EventsLikeAPIType[]>([])
     const [events, setEvents] = useState<EventObject[]>([])
     const [webCalEvents, setWebCalEvents] = useState<ExtendedWebcalEvents[]>([])
     const [firstDay, setFirstDay] = useState(0)
-    const calendarRef = createRef<FullCalendar>();
+    const calendarRef = createRef<CalendarRef>();
     const [caldav_accounts, setCaldavAccounts] = useState<Caldav_Summary[]>([])
-    const [updateLocal, setUpdateLocal] = useState(Date.now())
+    const [updateLocal, setUpdateLocal] = useState(0)
     const {t, i18n} = useTranslation("common")
     useEffect(() =>{
 
         if (calendarRef && calendarRef.current) {
 
             const calendarApi = calendarRef.current.getApi()
+            
             // calendarApi.eventDragStart = this.eventDrag
             const view = getDefaultViewForCalendar()
             if (view) {
@@ -108,51 +126,42 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
 
             }
         }
-
-
+        
+        getCalDAVSummaryFromDexie().then(caldav_accounts => {
+            
+            if (isValidResultArray(caldav_accounts)) {
+                setCaldavAccounts(caldav_accounts)
+            }
+        })
+        
+        setUpdateLocal(Date.now())
     },[])
 
     useEffect(() => {
         let isMounted = true
         if (isMounted) {
 
-            const firstDay = getCalendarStartDay()
-            if (firstDay) {
-                setFirstDay(parseInt(firstDay.toString()))
-            }
-
-            getCalDAVSummaryFromDexie().then(caldav_accounts => {
-
-                if (isValidResultArray(caldav_accounts)) {
-                    setCaldavAccounts(caldav_accounts)
-                }
-            })
-            getEventsFromDexie_LikeAPI().then(allEventsFromDexie => {
-                setEventsArray([])
-                // console.log("allEventsFromDexie", allEventsFromDexie)
-                setEventsArray(allEventsFromDexie)
-            })
-
-            getAllEventsFromWebcalForRender().then(webcal_events =>{
-                // console.log("webcal_events", webcal_events)
-                setWebCalEvents(webcal_events)
-
-            })
-        }
-        return () => {
-            isMounted = false
-        }
-    }, [updated, allUpdated])
-
-    useEffect(() => {
-        let isMounted = true
-        if (isMounted) {
             addEventsToCalendar()
         }
         return () => {
             isMounted = false
         }
-    }, [allEvents, showTasksChecked, updateLocal, webCalEvents])
+    }, [allUpdated])
+
+    useEffect(() => {
+        let isMounted = true
+        if (isMounted) {
+            const firstDay = getCalendarStartDay()
+            if (firstDay) {
+                setFirstDay(parseInt(firstDay.toString()))
+            }
+
+            addEventsToCalendar()
+        }
+        return () => {
+            isMounted = false
+        }
+    }, [])
     const viewChanged = (e) => {
         if (calendarRef && calendarRef.current) {
 
@@ -186,9 +195,9 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
     }
 
     const addEventsToCalendar = async () => {
-        setEvents([])
+        const allEvents = await getEventsFromDexie_LikeAPI()
+
         let finalEvents: EventObject[] = []
-        // console.log("allEvents", allEvents)
         if (isValidResultArray(allEvents) && allEvents && Array.isArray(allEvents)) {
 
             for (let i = 0; i < allEvents.length; i++) {
@@ -210,72 +219,80 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
                     // console.log(event.type, event.calendar_events_id)
                     if (event.type != "VTODO" && event.type != "VTIMEZONE") {
                         const data = getParsedEvent(allEvents[i].events[j].data)
-                        // console.log("Parsed Event", data.summary,  event.calendar_id, data)
-                        // console.log( data.summary )
-                        if (varNotEmpty(data) == false) {
+                        // console.log( data.summary, data )
+                        if (!data) {
                             continue
                         }
-                        if (varNotEmpty(data.summary) == false || (varNotEmpty(data.summary) && data.summary.toString().trim() == "")) {
+                        if (!data.summary) {
                             continue
                         }
 
 
-
+                        // console.log("Parsed Event", data)
                         let allDay = isAllDayEvent(data.start, data.end)
-
+                        // console.log("allDay", data.summary, allDay)
                         let eventObject: EventObject = {
                             id: event.calendar_events_id!.toString(),
                             title: data.summary,
-                            start: moment(data.start).toISOString(),
-                            end: moment(data.end).toISOString(),
-                            allDay: allDay,
                             editable: true,
                             draggable: true,
-                            backgroundColor: allEvents[i].info.color
+                            allDay: allDay,
+                            color: allEvents[i].info.color,
+                            start: new Date(data.start).toISOString(),
+                            end: new Date(data.end).toISOString(),
+
                         }
                         //finalEvents.push(eventObject)
 
-                        let rrule = rruleToObject(data.rrule)
                         //Check if the event has a recurrence rule.
-                        if (varNotEmpty(data.rrule) && data.rrule != '' && varNotEmpty(rrule["FREQ"]) && rrule["FREQ"] != "") {
+                        let rrule: RRule | null = parseRRuleString(data.rrule)
+                        if (rrule) {
+                            
+                            
+                            if(rrule){
+                                eventObject={
+                                    ...eventObject,
+                                    editable:false,
+                                    draggable:false,
+                                }
 
+                            let dtstart = allDay ? new Date(data.start): moment(data.start)
+                            if(allDay){
+                                // dtstart.setDate(dtstart.getDate() - 1)
+                            }
+                            eventObject.rrule  = {
+                                freq: rrule.options.freq,
+                                byweekday: (rrule.options.byweekday)? rrule.options.byweekday: [],
+                                interval: rrule.options.interval,
+                                until: rrule.options.until ? rrule.options.until : undefined,
+                                count: rrule.options.count ?? undefined,
+                                bymonthday: rrule.options.bymonthday ?? undefined,
+                                bymonth: rrule.options.bymonth ?? undefined,
+                            }
+
+                            }
+                            // if(rrule.options && rrule.options.dtstart) rrule.options.dtstart = new Date(moment(rrule.options.dtstart).ttoISOString())
+                            // console.log("rrule", data.summary, rrule)
                             //let dtstart = new Date(moment(data.start).unix()*1000+86400*1000)
-                            let eventDuration = {seconds: 3600}
-                            if(data.end && data.start){
-                                const eventDurationValue = moment(data.end).unix() - moment(data.start).unix()
-                                eventDuration = {seconds: eventDurationValue }
-
+                            if(allDay){
+                                eventObject.duration = {seconds: 86400}
                             }
+                            // console.log("eventObject.rrule", data.summary, eventObject )
+                            if(data.end) eventObject.end = moment(data.end).toISOString()
+                            if(data.start) eventObject.start = moment(data.start).toISOString()
 
-                            let until = rrule["UNTIL"]
-                            eventObject.rrule = {
-                                freq: rrule["FREQ"].toLowerCase(),
-                                interval: parseInt(rrule["INTERVAL"]),
-                                dtstart: data.start? data.start.toISOString(): "",
-                                until: until,
-                            }
-                            eventObject.editable=false
-                            eventObject.draggable=false
-                            eventObject.duration=eventDuration
+                        }else{
+                           
+                             eventObject = {...eventObject, 
+                                start: moment(data.start).toISOString(),
+                                end: moment(data.end).toISOString(),
 
-                            // console.log("eventObject", eventObject.title, eventObject)
-                            finalEvents.push(eventObject)
-
+                            }    
                         }
-                        else {
-                            let eventObject: EventObject = {
-                                id: event.calendar_events_id!.toString(),
-                                title: data.summary,
-                                start: data.start,
-                                end: data.end,
-                                allDay: allDay,
-                                editable: true,
-                                draggable: true,
-                                backgroundColor: allEvents[i].info.color,
-                            }
-                            finalEvents.push(eventObject)
-
-                        }
+                    // console.log("eventObject", eventObject.title, eventObject.rrule, eventObject.rrule?.dtstart)
+                  
+                        // if(eventObject.rrule) console.log(eventObject.title, eventObject.rrule.dtstart)
+                        finalEvents.push(eventObject)
 
                         let eventToPush = {}
 
@@ -289,13 +306,12 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
                             continue
                         }
 
-                        let eventObject: {} | EventObject = {}
+                        let eventObject: EventObject
                         if (majorTaskFilter(data) && data) {
                             const title = "[" + t("TASK") + "] " + data.summary
-                            // console.log("data", data)
                             if (data.due || data.start) {
 
-                                
+                                let startEnd = getStartAndEndDateForTaskForCalendar(data)
                                 let dueDate = data.due ? moment(data.due).toISOString() : moment.unix(moment(data.start).unix() - (60 * 60)).toISOString()
                                 let startDate = data.start? moment(data.start).toISOString(): moment.unix(moment(data.due).unix() - (60 * 60)).toISOString()
                                 // console.log(startDate, title, dueDate, data.rrule)
@@ -305,33 +321,44 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
                                     id: event.calendar_events_id!.toString(),
                                     title: title,
                                     allDay: allDay,
-                                    start: startDate,
-                                    end: dueDate,
                                     editable: false,
                                     draggable: false,
-                                    backgroundColor: allEvents[i].info.color,
-                                    
+                                    color: allEvents[i].info.color,
                                 }
 
-                                let rrule = rruleToObject(data.rrule)
+                                // console.log("data", data.summary, data.rrule, eventObject.rrule)
+                                let rrule: RRule | null = parseRRuleString(data.rrule)
 
                                 //Check if the event has a recurrence rule.
-                                if (varNotEmpty(data.rrule) && data.rrule != '' && varNotEmpty(rrule["FREQ"]) && rrule["FREQ"] != "") {
-    
+                                if (rrule) {
+                                    
                                     // let recurrenceObj = new RecurrenceHelper(data)
                                     // let dueDate = moment(recurrenceObj.getNextDueDate()).toISOString()
                                     // let startDate = moment.unix(moment(dueDate).unix() - (60 * 60)).toISOString()
                                     // console.log("REPEATING", startDate, title, dueDate)
-    
-                                    eventObject["rrule"] = {
-                                            freq: rrule["FREQ"].toLowerCase(),
-                                            interval: parseInt(rrule["INTERVAL"]),
-                                            dtstart: startDate,
-                                            until: rrule["UNTIL"]
-                                        }
+                                    eventObject.rrule = {
+                                        freq: rrule.options.freq,
+                                        dtstart: startEnd.start,
+                                        byweekday: (rrule.options.byweekday)? rrule.options.byweekday: [],
+                                        interval: rrule.options.interval,
+                                        until: rrule.options.until ? rrule.options.until : undefined,
+                                        count: rrule.options.count ?? undefined,
+                                        bymonthday: rrule.options.bymonthday ?? undefined,
+                                        bymonth: rrule.options.bymonth ?? undefined,
+                                    }
+                                    // console.log("data", data.summary,rrule.toString() ,data.rrule, eventObject.rrule)
+
                                     // 
                                 //    console.log("eventObject", data.summary, eventObject)
-    
+                                    eventObject = {...eventObject, 
+                                        start: startEnd.start,
+                                        end: startEnd.end,
+                                     }  
+                                }else{
+                                    eventObject = {...eventObject, 
+                                        start: startEnd.start ,
+                                        end: startEnd.end,
+                                     }                            
                                 } 
                                    
     
@@ -359,6 +386,8 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
         }
 
         //Now we add webcal events.
+        const webCalEvents: ExtendedWebcalEvents[] = await getAllEventsFromWebcalForRender()
+
         if(webCalEvents && Array.isArray(webCalEvents) && webCalEvents.length>0){
             // console.log("webcal", webCalEvents)
             for (const k in webCalEvents){
@@ -404,7 +433,7 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
                     }
                     // console.log("summary, start, end, diff", summary, diff, data)
                     // console.log(summary, data.colour)
-                    const colour = webCalEvents[k].colour ?? "purple"
+                    const colour =  webCalEvents[k].colour ?? "purple"
                     let eventObject: EventObject = {
                         id: data.uid,
                         title: summary,
@@ -416,7 +445,7 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
                         extendedProps:{
                             isWebCalEvent:true
                         },
-                        backgroundColor: colour,
+                        color: colour,
                         
                     }
                     finalEvents.push(eventObject)
@@ -466,6 +495,7 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
 
     }
     const handleDateClick = (e) => {
+        
         const end = moment(e.date).unix() * 1000 + 3600 * 1000
         setEditorInput({
             id: null,
@@ -475,39 +505,48 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
         // console.log(moment(e.date).toISOString(),moment(end).toISOString())
         setShow(true)
     }
-    const makeQuickRequesttoCaldav = async (eventData, eventInfoFromDexie, summary) => {
+    const saveRequestToSyncManager = async (eventData, eventInfoFromDexie: Calendar_Events[], summary) => {
         const obj = getObjectForAPICallV2(eventData)
         let ics = await makeGenerateICSRequest({ obj })
         const caldav_accounts_id = await getCalDAVAccountIDFromCalendarID_Dexie(eventInfoFromDexie[0].calendar_id)
+        // console.log("eventInfoFromDexie", eventInfoFromDexie)
         const messageHeader = summary ? summary + ": " : ""
         // console.log("messageHeader", messageHeader)
-        console.log(ics)
-        if (varNotEmpty(ics)) {
-            const response = await updateEvent(eventInfoFromDexie[0].calendar_id, eventInfoFromDexie[0].url, eventInfoFromDexie[0].etag, ics, caldav_accounts_id)
-            console.log("response from Modify", response)
-            if (varNotEmpty(response) && varNotEmpty(response.success) && response.success == true) {
-                toast.success(messageHeader + t("UPDATE_OK"))
+        // console.log(ics)
+        if (varNotEmpty(ics) && eventInfoFromDexie[0].calendar_id && eventInfoFromDexie[0].data && eventInfoFromDexie[0].etag) {
+            SyncManager.addTask(SyncManager.SYNC_EDIT_TASK, summary, { calendar_id: eventInfoFromDexie[0].calendar_id, oldData: eventInfoFromDexie[0].data, newData: ics, etag: eventInfoFromDexie[0].etag, type: "VEVENT", eventURL: eventInfoFromDexie[0].url }).then(res => {
+                if (res) {
+                    //setUpdateViewTime(Date.now())
 
-
-            } else {
-                let message = getMessageFromAPIResponse(response)
-                if (message != "" && varNotEmpty(message)) {
-                    toast.error(messageHeader + t(message.toString()))
-                    console.log(response)
                 } else {
-                    toast.error(messageHeader + (t("ERROR_GENERIC")))
-
+                    toast.error(t("ERROR_GENERIC"))
                 }
-            }
+            })
+            
+            // const response  = await updateEvent(eventInfoFromDexie[0].calendar_id, eventInfoFromDexie[0].url, eventInfoFromDexie[0].etag, ics, caldav_accounts_id)
+            // // console.log("response from Modify", response)
+            // if (response && response.success && response.success == true) {
+            //     toast.success(messageHeader + t("UPDATE_OK"))
+
+
+            // } else {
+            //     let message = getMessageFromAPIResponse(response)
+            //     if (message != "" && varNotEmpty(message)) {
+            //         toast.error(messageHeader + t(message.toString()))
+            //         console.log(response)
+            //     } else {
+            //         toast.error(messageHeader + (t("ERROR_GENERIC")))
+
+            //     }
+            // }
 
         } else {
             toast.error(messageHeader + t("ERROR_GENERIC"))
             console.log("makeQuickRequesttoCaldav: ics is null")
         }
-        setUpdatedCalendarView(Date.now())
     }
     const eventDrop = async (e) => {
-        toast.info(t("ACTION_SENT_TO_CALDAV"))
+        // toast.info(t("ACTION_SENT_TO_CALDAV"))
         // console.log("eventDrop", e)
         const newID = e.event.id
         const eventInfoFromDexie = await getEventFromDexieByID(parseInt(newID.toString()))
@@ -525,7 +564,7 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
 
             eventData.start = newStart
             eventData.end = newEnd
-            makeQuickRequesttoCaldav(eventData, eventInfoFromDexie, eventData["summary"])
+            saveRequestToSyncManager(eventData, eventInfoFromDexie, eventData["summary"])
         } else {
             toast.error(t("ERROR_GENERIC"))
             console.error("eventDrop: eventInfoFromDexie is empty")
@@ -535,7 +574,7 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
 
     }
     const eventResize = async (e) => {
-        toast.info(t("ACTION_SENT_TO_CALDAV"))
+        // toast.info(t("ACTION_SENT_TO_CALDAV"))
         const newID = e.event.id
         const eventInfoFromDexie = await getEventFromDexieByID(parseInt(newID.toString()))
         if (eventInfoFromDexie && Array.isArray(eventInfoFromDexie) && eventInfoFromDexie.length > 0) {
@@ -549,13 +588,13 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
             //console.log(newStart, newEnd)
 
             eventData.end = newEnd
-            makeQuickRequesttoCaldav(eventData, eventInfoFromDexie, eventData["summary"])
+            saveRequestToSyncManager(eventData, eventInfoFromDexie, eventData["summary"])
 
         }
 
     }
     const userPreferencesChanged = () => {
-        setUpdateLocal(Date.now())
+        setUpdateViewTime(Date.now())
     }
 
     let options: JSX.Element[] = []
@@ -575,59 +614,73 @@ export const CalendarViewWithStateManagement = ({ calendarAR }: { calendarAR: nu
             return `${dateFormat} ddd`
         }
     }
+    const headerDateFormatter = () : FormatterInput | DateFormatter | undefined =>{
+        
+        switch(viewValue){
+            case "dayGridMonth":
+                return {weekday:"short"}
+            case "dayGridWeek":
+                return {weekday:"short", month:"long" , dateStyle: undefined}
+        }
+        return 
+
+    }
     return (
 
-        <>
-            <Row style={{ padding: 20, flex: 1, justifyContent: "center", alignItems: "center", textAlign:"center"}} >
+        <div style={{minHeight:"100vh", height: "auto"}}>
+            <Row className="gy-3 " style={{ padding: 20, flex: 1, justifyContent: "center", alignItems: "center", textAlign:"center", }} >
                 <Col md={8} >
                     <Form.Select value={viewValue} onChange={viewChanged}>
                         {options}
                     </Form.Select>
                 </Col>
-                <Col md={2} >
-
-                    <Form.Check
-                        type="switch"
-                        inline
-                        id="show_tasks_switch"
-                        checked={showTasksChecked}
-                        onChange={showTasksChanged}
-                        label={t("SHOW_TASKS")}
-                    />
-
-                </Col>
-                <Col md={2} >
-                    {calendarsSelect}
+                <Col style={{display: "flex", justifyContent: "flex-end"}} md={4}>
+                    <Stack direction="horizontal">
+                        <Form.Check
+                            type="switch"
+                            inline
+                            id="show_tasks_switch"
+                            checked={showTasksChecked}
+                            onChange={showTasksChanged}
+                            label={t("SHOW_TASKS")}
+                        />
+                        {calendarsSelect}
+                    </Stack>
                 </Col>
             </Row>
-            <div>
+            <div style={{marginBottom:3}}>
                 <AddFromTemplateModal />
 
             </div>
             <FullCalendar
-                plugins={[dayGridPlugin, timeGridPlugin, bootstrap5Plugin, interactionPlugin, rrulePlugin, listPlugin, momentPlugin]}
+                plugins={[dayGridPlugin, timeGridPlugin,  rrulePlugin, listPlugin, themePlugin, interactionPlugin]}
                 ref={calendarRef}
                 initialView={viewValue}
-                themeSystem="standard"
+                colorScheme={isDarkModeEnabled() ? 'dark': ''}
                 events={events}
                 editable={true}
-                aspectRatio={calendarAR}
                 eventClick={eventClick}
                 dateClick={handleDateClick}
                 selectable={true}
+                aspectRatio={calendarAR}
                 nowIndicator={true}
                 eventDrop={eventDrop}
                 eventResize={eventResize}
+                scrollTimeReset={false}
                 firstDay={firstDay}
-                locales={allLocales}
-                locale={i18n.language}
+                locale={[i18n.language]}
                 slotDuration={'00:15:00'}                // 15 minute slots globally
                 slotLabelInterval={'01:00:00'}           // label every 1 hour
-                titleFormat={dateFormat} 
-                eventTimeFormat={timeFormat ?? "HH:mm"}
-                dayHeaderFormat={dateFormat? `${addDayNameInHeader()}` :  "DD/MM/YYYY ddd"}
-                slotLabelFormat={timeFormat?? "HH:mm"}
+                headerToolbar={{
+                left: 'prev,next',
+                center: 'title',
+                right: "today"
+                } }
+                //titleFormat={dateFormat} 
+                //eventTimeFormat={timeFormat ?? "HH:mm"}
+                // dayHeaderFormat={headerDateFormatter() as DateFormatter}
+                // slotLabelFormat={timeFormat?? "HH:mm"}
             />
-        </>
+        </div>
     )
 }
